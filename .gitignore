@@ -179,3 +179,28 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.apdisk
+
+# Finder metadata
+.AppleDouble
+.LSOverride
+
+# iCloud
+*.icloud
+
+# macOS thumbnails
+.Icon?
+
+# External drive metadata
+.DocumentRevisions-V100
+.com.apple.timemachine.donotpresent
