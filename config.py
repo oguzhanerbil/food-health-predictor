@@ -29,6 +29,10 @@ class ScraperConfig:
 
     # Devam et: zaten taranmış URL'leri atla
     resume: bool = True
+    
+    # OpenFoodFacts Login (10. sayfadan sonra gerekli)
+    off_email: str | None = None
+    off_password: str | None = None
 
 
 # Varsayılan örnek — bunu main.py'de içe aktarın
