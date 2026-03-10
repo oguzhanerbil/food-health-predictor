@@ -20,7 +20,7 @@ class ScraperConfig:
     min_delay_seconds: float = 1.5
     max_delay_seconds: float = 5.5
     request_timeout: int = 60
-    max_retries: int = 3
+    max_retries: int = 10
 
     # Çıktı ve günlük
     output_csv: str = "data/products.csv"
