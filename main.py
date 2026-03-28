@@ -12,6 +12,11 @@ Kullanım:
 
 import argparse
 import logging
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
 
 from config import ScraperConfig, DEFAULT_CONFIG
 from scraper.playwright_client import PlaywrightClient
@@ -24,12 +29,24 @@ from utils.logging_config import configure_logging
 logger = logging.getLogger(__name__)
 
 
+# .env dosyasını yükle
+def load_env():
+    env_file = Path(__file__).parent / "auth.env"
+    if env_file.exists():
+        load_dotenv(env_file)
+        logger.debug("✓ auth.env dosyası yüklendi")
+    else:
+        logger.debug("auth.env dosyası bulunamadı")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Nutri-Score verileri için OpenFoodFacts tarayıcısı.")
     parser.add_argument("--url", default=None, help="Başlangıç URL'sini geçersiz kıl.")
     parser.add_argument("--pages", type=int, default=None, help="Taranacak maksimum liste sayfaları.")
     parser.add_argument("--output", default=None, help="Çıktı CSV yolu.")
     parser.add_argument("--no-resume", action="store_true", help="Kaydedilen ilerlemeyi yok say.")
+    parser.add_argument("--email", default=None, help="OpenFoodFacts email (10+ sayfa için)")
+    parser.add_argument("--password", default=None, help="OpenFoodFacts şifre")
     parser.add_argument("--log-level", default="INFO", help="Günlük seviyesi.")
     return parser.parse_args()
 
@@ -41,11 +58,16 @@ def build_config(args: argparse.Namespace) -> ScraperConfig:
         output_csv=args.output or DEFAULT_CONFIG.output_csv,
         log_level=args.log_level,
         resume=not args.no_resume,
+        off_email=args.email or os.getenv("OFF_EMAIL"),
+        off_password=args.password or os.getenv("OFF_PASSWORD"),
     )
     return cfg
 
 
 def main() -> None:
+    # .env dosyasını yükle
+    load_env()
+    
     args = parse_args()
     cfg = build_config(args)
 
@@ -62,6 +84,8 @@ def main() -> None:
         max_delay=cfg.max_delay_seconds,
         retries=cfg.max_retries,
         timeout=cfg.request_timeout,
+        email=cfg.off_email,
+        password=cfg.off_password,
     )
     listing_parser = ListingParser()
     product_parser = ProductParser()

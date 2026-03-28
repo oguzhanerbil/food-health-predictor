@@ -20,7 +20,7 @@ class ScraperConfig:
     min_delay_seconds: float = 1.5
     max_delay_seconds: float = 5.5
     request_timeout: int = 60
-    max_retries: int = 3
+    max_retries: int = 10
 
     # Çıktı ve günlük
     output_csv: str = "data/products.csv"
@@ -29,6 +29,10 @@ class ScraperConfig:
 
     # Devam et: zaten taranmış URL'leri atla
     resume: bool = True
+    
+    # OpenFoodFacts Login (10. sayfadan sonra gerekli)
+    off_email: str | None = None
+    off_password: str | None = None
 
 
 # Varsayılan örnek — bunu main.py'de içe aktarın
