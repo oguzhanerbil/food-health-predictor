@@ -94,6 +94,7 @@ def main() -> None:
         listing_parser=listing_parser,
         product_parser=product_parser,
         max_pages=cfg.max_pages,
+        already_saved_urls=None, # Will be set below
     )
 
     saved_count = 0
@@ -105,21 +106,34 @@ def main() -> None:
             already_saved = storage.get_saved_urls() if cfg.resume else set()
             if already_saved:
                 logger.info("Devam modu: CSV'de zaten %d URL var, bunlar atlanacak.", len(already_saved))
-
-            for product in orchestrator.scrape(cfg.start_url):
-                if product.url in already_saved:
+                
+            orchestrator.already_saved_urls = already_saved
+            
+            last_reported_batch = 0
+            for product, page_num in orchestrator.scrape(cfg.start_url):
+                if product is None:
+                    # Orchestrator zaten kayıtlı olduğu için None döndü
                     skipped_count += 1
+                    # Sayfa bazlı raporlama için burada da kontrol yapmalıyız
+                    if page_num > 0 and page_num % 50 == 0 and page_num != last_reported_batch:
+                        logger.info("--- RAPOR: %d sayfa geildi/taranmtr. Bu sırada %d yeni rn eklendi. ---", page_num, saved_count)
+                        last_reported_batch = page_num
                     continue
 
                 storage.save(product)
                 saved_count += 1
 
+                # Her 50 sayfada bir raporla
+                if page_num > 0 and page_num % 50 == 0 and page_num != last_reported_batch:
+                    logger.info("--- RAPOR: %d sayfa taranmıştır. Bu sırada %d yeni ürün eklendi. ---", page_num, saved_count)
+                    last_reported_batch = page_num
+
                 if saved_count % 50 == 0:
-                    logger.info("İlerleme: %d kaydedildi, %d atlandı.", saved_count, skipped_count)
+                    logger.info("İlerleme: %d yeni ürün kaydedildi, %d atlanmış URL.", saved_count, skipped_count)
 
         logger.info("=== Tarama Tamamlandı ===")
-        logger.info("Toplam kaydedilen  : %d", saved_count)
-        logger.info("Toplam atlanan    : %d", skipped_count)
+        logger.info("Toplam kaydedilen yeni ürün : %d", saved_count)
+        logger.info("Toplam atlanan (mevcut)     : %d", skipped_count)
     except KeyboardInterrupt:
         logger.warning("Tarama kullanıcı tarafından durduruldu (Ctrl+C)")
         logger.info("Son durum - Kaydedilen: %d, Atlanan: %d", saved_count, skipped_count)
