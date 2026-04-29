@@ -1,7 +1,7 @@
 """
 main.py
 -------
-Giriş noktası. Tüm bileşenleri bağlar ve taramayı başlatır.
+Giriş noktası (Asenkron Versiyon). Tüm bileşenleri bağlar ve taramayı başlatır.
 
 Kullanım:
     python main.py                        # varsayılan yapılandırma ile çalıştır
@@ -11,6 +11,7 @@ Kullanım:
 """
 
 import argparse
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -19,7 +20,7 @@ from dotenv import load_dotenv
 
 
 from config import ScraperConfig, DEFAULT_CONFIG
-from scraper.playwright_client import PlaywrightClient
+from scraper.http.playwright_client import PlaywrightClient
 from scraper.parsers.listing_parser import ListingParser
 from scraper.parsers.product_parser import ProductParser
 from scraper.core.orchestractor import ScraperOrchestrator
@@ -64,7 +65,7 @@ def build_config(args: argparse.Namespace) -> ScraperConfig:
     return cfg
 
 
-def main() -> None:
+async def main() -> None:
     # .env dosyasını yükle
     load_env()
     
@@ -72,72 +73,80 @@ def main() -> None:
     cfg = build_config(args)
 
     configure_logging(log_level=cfg.log_level, log_file=cfg.log_file)
-    logger.info("=== Nutri-Score Verileri için OpenFoodFacts Tarayıcısı Başlıyor ===")
+    logger.info("=== Nutri-Score Verileri için OpenFoodFacts Tarayıcısı Başlıyor (ASENKRON) ===")
     logger.info("Başlangıç URL'si : %s", cfg.start_url)
     logger.info("Maksimum sayfalar : %s", cfg.max_pages or "sınırsız")
     logger.info("Çıktı          : %s", cfg.output_csv)
     logger.info("Devam et      : %s", cfg.resume)
 
-    # HTTP istemcisi, parser'lar ve orkestratör oluşturuluyor
-    http_client = PlaywrightClient(
-        min_delay=cfg.min_delay_seconds,
-        max_delay=cfg.max_delay_seconds,
-        retries=cfg.max_retries,
-        timeout=cfg.request_timeout,
-        email=cfg.off_email,
-        password=cfg.off_password,
-    )
     listing_parser = ListingParser()
     product_parser = ProductParser()
-    orchestrator = ScraperOrchestrator(
-        http_client=http_client,
-        listing_parser=listing_parser,
-        product_parser=product_parser,
-        max_pages=cfg.max_pages,
-        already_saved_urls=None, # Will be set below
-    )
 
     saved_count = 0
     skipped_count = 0
 
     try:
-        with CsvStorage(cfg.output_csv) as storage:
-            # Resume support: load already-scraped URLs
-            already_saved = storage.get_saved_urls() if cfg.resume else set()
-            if already_saved:
-                logger.info("Devam modu: CSV'de zaten %d URL var, bunlar atlanacak.", len(already_saved))
+        # PlaywrightClient'ı asenkron context manager ile başlat
+        async with PlaywrightClient(
+            min_delay=cfg.min_delay_seconds,
+            max_delay=cfg.max_delay_seconds,
+            retries=cfg.max_retries,
+            timeout=cfg.request_timeout,
+            email=cfg.off_email,
+            password=cfg.off_password,
+        ) as http_client:
+
+            orchestrator = ScraperOrchestrator(
+                http_client=http_client,
+                listing_parser=listing_parser,
+                product_parser=product_parser,
+                max_pages=cfg.max_pages,
+                already_saved_urls=None, # Aşağıda set edilecek
+            )
+
+            with CsvStorage(cfg.output_csv) as storage:
+                # Resume support: load already-scraped URLs
+                already_saved = storage.get_saved_urls() if cfg.resume else set()
+                if already_saved:
+                    logger.info("Devam modu: CSV'de zaten %d URL var, bunlar atlanacak.", len(already_saved))
+                    
+                orchestrator.already_saved_urls = already_saved
                 
-            orchestrator.already_saved_urls = already_saved
-            
-            last_reported_batch = 0
-            for product, page_num in orchestrator.scrape(cfg.start_url):
-                if product is None:
-                    # Orchestrator zaten kayıtlı olduğu için None döndü
-                    skipped_count += 1
-                    # Sayfa bazlı raporlama için burada da kontrol yapmalıyız
+                last_reported_batch = 0
+
+                # Orkestratörden ürünleri asenkron olarak (async for) çek
+                async for product, page_num in orchestrator.scrape(cfg.start_url):
+                    if product is None:
+                        # Orchestrator zaten kayıtlı olduğu için None döndü
+                        skipped_count += 1
+                        # Sayfa bazlı raporlama
+                        if page_num > 0 and page_num % 50 == 0 and page_num != last_reported_batch:
+                            logger.info("--- RAPOR: %d sayfa geçildi/taranmıştır. Bu sırada %d yeni ürün eklendi. ---", page_num, saved_count)
+                            last_reported_batch = page_num
+                        continue
+
+                    # Depolama (I/O) işlemi senkron çalışmaya devam edebilir
+                    storage.save(product)
+                    saved_count += 1
+
+                    # Her 50 sayfada bir raporla
                     if page_num > 0 and page_num % 50 == 0 and page_num != last_reported_batch:
-                        logger.info("--- RAPOR: %d sayfa geildi/taranmtr. Bu sırada %d yeni rn eklendi. ---", page_num, saved_count)
+                        logger.info("--- RAPOR: %d sayfa taranmıştır. Bu sırada %d yeni ürün eklendi. ---", page_num, saved_count)
                         last_reported_batch = page_num
-                    continue
 
-                storage.save(product)
-                saved_count += 1
-
-                # Her 50 sayfada bir raporla
-                if page_num > 0 and page_num % 50 == 0 and page_num != last_reported_batch:
-                    logger.info("--- RAPOR: %d sayfa taranmıştır. Bu sırada %d yeni ürün eklendi. ---", page_num, saved_count)
-                    last_reported_batch = page_num
-
-                if saved_count % 50 == 0:
-                    logger.info("İlerleme: %d yeni ürün kaydedildi, %d atlanmış URL.", saved_count, skipped_count)
+                    if saved_count % 50 == 0:
+                        logger.info("İlerleme: %d yeni ürün kaydedildi, %d atlanmış URL.", saved_count, skipped_count)
 
         logger.info("=== Tarama Tamamlandı ===")
         logger.info("Toplam kaydedilen yeni ürün : %d", saved_count)
         logger.info("Toplam atlanan (mevcut)     : %d", skipped_count)
+
     except KeyboardInterrupt:
         logger.warning("Tarama kullanıcı tarafından durduruldu (Ctrl+C)")
         logger.info("Son durum - Kaydedilen: %d, Atlanan: %d", saved_count, skipped_count)
+    except Exception as e:
+        logger.error("Beklenmeyen bir hata oluştu: %s", e, exc_info=True)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

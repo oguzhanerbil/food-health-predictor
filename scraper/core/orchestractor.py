@@ -1,7 +1,7 @@
 """
 scraper/core/orchestrator.py
 -----------------------------
-Tarama sürecini yöneten ana koordinatör.
+Tarama sürecini yöneten ana koordinatör (Asenkron).
 Listeleme sayfalarını tarar, ürün sayfalarını ziyaret eder ve Product nesneleri üretir.
 
 Bağımlılık Tersine Çevirme:
@@ -9,8 +9,9 @@ Bağımlılık Tersine Çevirme:
   - Ayrıştırıcılar interface olarak enjekte edilir — test için kolayca değiştirilebilir.
 """
 
+import asyncio
 import logging
-from typing import Iterator, Optional, Tuple
+from typing import AsyncIterator, Optional, Tuple
 
 from scraper.http.base import BaseHttpClient
 from scraper.parsers.listing_parser import ListingParser
@@ -41,10 +42,10 @@ class ScraperOrchestrator:
     # Ana giriş noktası
     # ------------------------------------------------------------------ #
 
-    def scrape(self, start_url: str) -> Iterator[Tuple[Optional[Product], int]]:
+    async def scrape(self, start_url: str) -> AsyncIterator[Tuple[Optional[Product], int]]:
         """
-        Ürün nesnelerini tek tek veren bir jeneratör.
-        Listeleme sayfalarını tarar ve her ürün URL'sini ziyaret eder.
+        Ürün nesnelerini tek tek veren asenkron bir jeneratör.
+        Listeleme sayfalarını tarar ve her ürün URL'sini asenkron/paralel olarak ziyaret eder.
 
         Yields:
             (Product | None, page_number)  — None, atlanmış URL'yi temsil eder.
@@ -63,7 +64,7 @@ class ScraperOrchestrator:
                 pages_crawled + 1, current_page_num, current_url,
             )
 
-            html = self.http.get(current_url, wait_for="#products_match_all")
+            html = await self.http.get(current_url, wait_for="#products_match_all")
 
             if html is None:
                 current_url, current_page_num, pages_crawled = self._handle_failed_page(
@@ -77,7 +78,9 @@ class ScraperOrchestrator:
                 len(product_urls), pages_crawled + 1, current_page_num,
             )
 
-            yield from self._scrape_products(product_urls, pages_crawled)
+            # Ürünleri asenkron ve paralel olarak (yield ederek) tarama
+            async for product_tuple in self._scrape_products(product_urls, pages_crawled):
+                yield product_tuple
 
             pages_crawled += 1
             current_page_num += 1
@@ -89,26 +92,40 @@ class ScraperOrchestrator:
     # Yardımcı metodlar
     # ------------------------------------------------------------------ #
 
-    def _scrape_products(
+    async def _scrape_products(
         self, product_urls: list, pages_crawled: int
-    ) -> Iterator[Tuple[Optional[Product], int]]:
-        """Verilen URL listesindeki ürünleri tek tek parse ederek yield eder."""
+    ) -> AsyncIterator[Tuple[Optional[Product], int]]:
+        """Verilen URL listesindeki ürünleri paralel parse ederek yield eder."""
+        sem = asyncio.Semaphore(5)
+
+        async def _bounded_scrape(url: str) -> Optional[Product]:
+            async with sem:
+                return await self._scrape_single_product(url)
+
+        tasks = []
         for product_url in product_urls:
             if product_url in self.already_saved_urls:
                 logger.debug("Ürün zaten kayıtlı, atlanıyor: %s", product_url)
+                # Anında yield ediyoruz (kayıtlı olduğu için None)
                 yield None, pages_crawled + 1
                 continue
+            
+            # Kayıtlı olmayanları task listesine at
+            tasks.append(asyncio.create_task(_bounded_scrape(product_url)))
 
-            product = self._scrape_single_product(product_url)
+        # Paralel çalışan task'ları bitiş sırasına göre yakalayıp yield et
+        for coro in asyncio.as_completed(tasks):
+            product = await coro
             if product:
                 yield product, pages_crawled + 1
 
-    def _scrape_single_product(self, url: str) -> Optional[Product]:
-        html = self.http.get(url, wait_for=None)
+    async def _scrape_single_product(self, url: str) -> Optional[Product]:
+        html = await self.http.get(url, wait_for=None)
         if html is None:
             logger.warning("Ürün atlanıyor (çekme başarısız): %s", url)
             return None
         try:
+            # HTML parse işlemi CPU-bound olduğu için senkron (await olmadan) çalışır.
             product = self.product_parser.parse(html, url)
             logger.debug("Ürün ayrıştırıldı: %s", product.name)
             return product
