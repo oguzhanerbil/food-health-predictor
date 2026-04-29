@@ -9,7 +9,7 @@ for file in grade_files:
     try:
         df = pd.read_csv("data/"+file)
         dataframes.append(df)
-        print(f"✓ {file} yüklendi ({len(df)} satır)")
+        print(f"[OK] {file} yüklendi ({len(df)} satır)")
     except FileNotFoundError:
         print(f"✗ {file} bulunamadı")
 
@@ -21,8 +21,14 @@ if dataframes:
     print(f"Toplam sütun sayısı: {len(combined_df.columns)}")
     print(f"{'='*50}\n")
     
-    # Birleştirilmiş veriyi ham_veri.csv olarak kaydet
+    # Tekrar eden ürünleri barkod bazında temizle
+    before = len(combined_df)
+    combined_df = combined_df.drop_duplicates(subset='barkod', keep='first')
+    print(f"Tekrar eden ürünler temizlendi: {before - len(combined_df)} kayıt silindi")
+    print(f"Temizlenmiş toplam satır: {len(combined_df)}")
+
+    # Birleştirilmiş veriyi ham_data.csv olarak kaydet
     combined_df.to_csv('data/ham_data.csv', index=False, encoding='utf-8')
-    print(f"✓ Birleştirilmiş veri 'ham_veri.csv' dosyasına kaydedildi")
+    print(f"[OK] Birleştirilmiş veri 'ham_data.csv' dosyasına kaydedildi")
 else:
     print("Hiçbir CSV dosyası bulunamadı!")
