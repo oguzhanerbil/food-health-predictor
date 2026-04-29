@@ -20,9 +20,9 @@ from dotenv import load_dotenv
 
 from config import ScraperConfig, DEFAULT_CONFIG
 from scraper.playwright_client import PlaywrightClient
-from scraper.listing_parser import ListingParser
-from scraper.product_parser import ProductParser
-from scraper.orchestrator import ScraperOrchestrator
+from scraper.parsers.listing_parser import ListingParser
+from scraper.parsers.product_parser import ProductParser
+from scraper.core.orchestractor import ScraperOrchestrator
 from storage.csv_storage import CsvStorage
 from utils.logging_config import configure_logging
 
