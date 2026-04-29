@@ -96,7 +96,7 @@ class ScraperOrchestrator:
         self, product_urls: list, pages_crawled: int
     ) -> AsyncIterator[Tuple[Optional[Product], int]]:
         """Verilen URL listesindeki ürünleri paralel parse ederek yield eder."""
-        sem = asyncio.Semaphore(5)
+        sem = asyncio.Semaphore(8)
 
         async def _bounded_scrape(url: str) -> Optional[Product]:
             async with sem:
