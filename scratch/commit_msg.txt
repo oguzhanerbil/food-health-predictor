@@ -1,0 +1,5 @@
+fix: hardcoded Mac yolları relative path ile değiştirildi, bağımlılıklar düzeltildi
+
+- notebook1/2, data_cleaning, analiz notebook'larındaki /Users/oguzhanerbil/ yolları ../../data/ ile değiştirildi
+- data_cleaning.ipynb TypeError hatası düzeltildi (float/str sıralama)
+- Proje tüm platformlarda çalışır hale getirildi
