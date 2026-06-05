@@ -25,12 +25,14 @@ def prepare_data():
         
     # Her satırı metin formatına çeviren yardımcı fonksiyon
     def create_text(row):
+        lif = str(row['lif_g'])
+        lif_str = f"{lif}g" if lif != 'bilinmiyor' else 'bilinmiyor'
         return (f"Enerji: {row['enerji_kcal']}kcal, "
                 f"Yağ: {row['yag_g']}g, "
                 f"Şeker: {row['seker_g']}g, "
                 f"Tuz: {row['tuz_g']}g, "
                 f"Protein: {row['protein_g']}g, "
-                f"Lif: {row['lif_g']}g, "
+                f"Lif: {lif_str}, "
                 f"Nova: {row['nova_grubu']}, "
                 f"Kategori: {row['kategori_listesi']}, "
                 f"Marka: {row['markalar']}")
